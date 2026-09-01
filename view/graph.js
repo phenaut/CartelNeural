@@ -6,60 +6,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   const nodeDetails = document.getElementById('nodeDetails');
 
   if (!browserApi || !browserApi.storage || !browserApi.storage.local) {
-    showRuntimeError('L’extension n’est pas accessible dans ce contexte. Ouvre cette vue depuis l’extension Browser/Chrome.');
+    showRuntimeError('L’extension n’est pas accessible dans ce contexte. Ouvre cette vue depuis l’extension Firefox/Chrome.');
     return;
   }
 
-  let network = null;
+  let cy = null;
 
-  // Color Mapping by Group
   const groupColors = {
-    person: { background: '#38bdf8', border: '#0284c7', highlight: { background: '#7dd3fc', border: '#0369a1' } },
-    company: { background: '#10b981', border: '#059669', highlight: { background: '#6ee7b7', border: '#047857' } },
-    social: { background: '#f59e0b', border: '#d97706', highlight: { background: '#fcd34d', border: '#b45309' } },
-    email: { background: '#8b5cf6', border: '#6d28d9', highlight: { background: '#c4b5fd', border: '#5b21b6' } },
-    source: { background: '#ec4899', border: '#be185d', highlight: { background: '#fbcfe8', border: '#9d174d' } }
+    person: '#38bdf8',
+    company: '#10b981',
+    social: '#f59e0b',
+    email: '#8b5cf6',
+    source: '#ec4899'
   };
 
-  const rootColor = { background: '#ef4444', border: '#dc2626', highlight: { background: '#fca5a5', border: '#b91c1c' } };
-
-  function createGraphOptions(mini = false) {
-    return {
-      nodes: {
-        borderWidth: 2,
-        shadow: true,
-        font: { color: '#f8fafc', face: 'system-ui', size: 12, strokeWidth: 2, strokeColor: '#0f172a' }
-      },
-      edges: {
-        width: 1.5,
-        shadow: false,
-        smooth: { type: 'dynamic', roundness: 0.2 },
-        arrows: 'to'
-      },
-      layout: {
-        improvedLayout: true,
-        randomSeed: 42,
-        hierarchical: false
-      },
-      physics: mini ? {
-        enabled: false
-      } : {
-        enabled: true,
-        solver: 'forceAtlas2Based',
-        forceAtlas2Based: {
-          gravitationalConstant: -50,
-          centralGravity: 0.01,
-          springLength: 100,
-          springConstant: 0.08
-        },
-        stabilization: { iterations: 150 }
-      },
-      interaction: {
-        hover: true,
-        tooltipDelay: 200
-      }
-    };
-  }
+  const rootColor = '#ef4444';
 
   function showRuntimeError(message) {
     loadingOverlay.style.display = 'none';
@@ -67,13 +28,124 @@ document.addEventListener('DOMContentLoaded', async () => {
     container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#f8fafc;">Le graphe n’a pas pu être affiché.</div>';
   }
 
-  // Fetch graph data from storage
-  async function loadDataAndRender() {
-    if (typeof vis === 'undefined') {
-      showRuntimeError('La bibliothèque vis-network n’est pas chargée. Vérifie le fichier local vis-network.js.');
+  function buildCytoscapeGraph(graphData) {
+    const nodes = (graphData.nodes || []).map(node => ({
+      data: {
+        id: String(node.id),
+        label: node.label,
+        group: node.group,
+        title: node.title || node.label,
+        raw: node,
+        color: node.isRoot ? rootColor : (groupColors[node.group] || groupColors.person)
+      }
+    }));
+
+    const edges = (graphData.edges || []).map(edge => ({
+      data: {
+        id: `${edge.from}->${edge.to}:${edge.label || 'link'}`,
+        source: String(edge.from),
+        target: String(edge.to),
+        label: edge.label || '',
+        color: '#94a3b8'
+      }
+    }));
+
+    return { nodes, edges };
+  }
+
+  function renderGraph(graphData) {
+    if (typeof cytoscape === 'undefined') {
+      showRuntimeError('La bibliothèque Cytoscape.js n’est pas chargée.');
       return;
     }
 
+    const elements = buildCytoscapeGraph(graphData);
+
+    if (cy) {
+      cy.destroy();
+    }
+
+    cy = cytoscape({
+      container,
+      elements,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'data(color)',
+            'label': 'data(label)',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'font-size': '12px',
+            'font-weight': '600',
+            'color': '#f8fafc',
+            'text-outline-width': 2,
+            'text-outline-color': '#0f172a',
+            'width': 'mapData(weight, 0, 30, 20, 45)',
+            'height': 'mapData(weight, 0, 30, 20, 45)',
+            'shape': 'data(shape)',
+            'border-width': 2,
+            'border-color': '#0f172a'
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': '#94a3b8',
+            'line-color': '#94a3b8',
+            'width': 1.5,
+            'label': 'data(label)',
+            'font-size': '9px',
+            'color': '#cbd5e1',
+            'text-rotation': 'autorotate'
+          }
+        }
+      ],
+      layout: {
+        name: 'cose',
+        animate: true,
+        randomize: false,
+        fit: true,
+        padding: 30,
+        nodeRepulsion: 4500,
+        idealEdgeLength: 100,
+        gravity: 0.25,
+        nodeOverlap: 10
+      },
+      wheelSensitivity: 0.35
+    });
+
+    cy.on('tap', 'node', function (event) {
+      const node = event.target;
+      const raw = node.data('raw');
+      if (raw) {
+        renderSidebarDetails(raw);
+      }
+    });
+
+    cy.on('tap', function (event) {
+      if (event.target === cy) {
+        nodeDetails.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Cliquez sur un nœud du réseau pour afficher ses informations détaillées.</div>';
+      }
+    });
+
+    cy.fit();
+  }
+
+  function renderSidebarDetails(raw) {
+    let html = `
+      <div class="node-detail-name">${raw.label}</div>
+      <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Type: ${(raw.group || 'unknown').toUpperCase()}</div>
+      <div style="font-size: 13px; line-height: 1.4; color: var(--text-main);">
+        <strong>Description:</strong><br>${raw.title || 'N/A'}
+      </div>
+    `;
+    nodeDetails.innerHTML = html;
+  }
+
+  async function loadDataAndRender() {
     const data = await browserApi.storage.local.get(['currentQuery', 'graphData', 'graphStatus']);
 
     if (data.currentQuery) {
@@ -94,142 +166,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadingOverlay.style.display = 'none';
 
     if (!data.graphData || !data.graphData.nodes || data.graphData.nodes.length === 0) {
-      nodeDetails.innerHTML = '<div style="color: #ef4444;">Aucune donnée trouvée pour cette recherche. Un graphe de secours a été généré.</div>';
-      const fallbackNode = {
-        id: 'fallback_root',
-        label: data.currentQuery ? (data.currentQuery.type === 'person' ? `${data.currentQuery.prenom} ${data.currentQuery.nom}`.trim() : data.currentQuery.email) : 'Recherche',
-        group: 'person',
-        isRoot: true,
-        title: 'Sujet de recherche principal'
-      };
-
-      const fallbackEdge = { from: 'fallback_root', to: 'fallback_company', label: 'RELATION_DE_SECOURS' };
-      const fallbackCompany = { id: 'fallback_company', label: 'Entreprise associée', group: 'company', title: 'Données de secours générées localement' };
-      const fallbackAssoc = { id: 'fallback_assoc', label: 'Contact associé', group: 'person', title: 'Données de secours générées localement' };
-      const fallbackEdge2 = { from: 'fallback_company', to: 'fallback_assoc', label: 'ASSOCIÉ' };
-
       const fallbackData = {
-        nodes: [fallbackNode, fallbackCompany, fallbackAssoc],
-        edges: [fallbackEdge, fallbackEdge2]
+        nodes: [
+          { id: 'fallback_root', label: data.currentQuery ? (data.currentQuery.type === 'person' ? `${data.currentQuery.prenom} ${data.currentQuery.nom}`.trim() : data.currentQuery.email) : 'Recherche', group: 'person', isRoot: true, title: 'Sujet de recherche principal' },
+          { id: 'fallback_company', label: 'Entreprise associée', group: 'company', title: 'Données de secours générées localement' },
+          { id: 'fallback_assoc', label: 'Contact associé', group: 'person', title: 'Données de secours générées localement' }
+        ],
+        edges: [
+          { from: 'fallback_root', to: 'fallback_company', label: 'RELATION_DE_SECOURS' },
+          { from: 'fallback_company', to: 'fallback_assoc', label: 'ASSOCIÉ' }
+        ]
       };
-
-      const formattedNodes = fallbackData.nodes.map(node => ({
-        id: node.id,
-        label: node.label,
-        group: node.group,
-        title: node.title || node.label,
-        shape: node.isRoot ? 'diamond' : 'dot',
-        size: node.isRoot ? 25 : 16,
-        color: node.isRoot ? rootColor : (groupColors[node.group] || groupColors.person),
-        font: { color: '#f8fafc', face: 'system-ui', size: 12, strokeWidth: 2, strokeColor: '#0f172a' },
-        rawDetails: node
-      }));
-
-      const formattedEdges = fallbackData.edges.map(edge => ({
-        from: edge.from,
-        to: edge.to,
-        label: edge.label,
-        color: { color: '#475569', highlight: '#38bdf8' },
-        font: { color: '#94a3b8', size: 9, align: 'middle' },
-        arrows: 'to',
-        smooth: { type: 'continuous' }
-      }));
-
-      const visData = { nodes: new vis.DataSet(formattedNodes), edges: new vis.DataSet(formattedEdges) };
-      const options = createGraphOptions(true);
-
-      try {
-        network = new vis.Network(container, visData, options);
-        network.fit({ animation: true, maxZoom: 1.5 });
-      } catch (err) {
-        console.error('Erreur Vis Network fallback:', err);
-        showRuntimeError('Le graphe a été généré mais vis-network n’a pas réussi à l’afficher.');
-        return;
-      }
+      renderGraph(fallbackData);
       return;
     }
 
-    // Format Nodes for Vis-network
-    const formattedNodes = data.graphData.nodes.map(node => {
-      const colorScheme = node.isRoot ? rootColor : (groupColors[node.group] || groupColors.person);
-      return {
-        id: node.id,
-        label: node.label,
-        group: node.group,
-        title: node.title || node.label,
-        shape: node.isRoot ? 'diamond' : 'dot',
-        size: node.isRoot ? 25 : 16,
-        color: colorScheme,
-        font: { color: '#f8fafc', face: 'system-ui', size: 12, strokeWidth: 2, strokeColor: '#0f172a' },
-        rawDetails: node
-      };
-    });
-
-    // Format Edges
-    const formattedEdges = data.graphData.edges.map(edge => ({
-      from: edge.from,
-      to: edge.to,
-      label: edge.label,
-      color: { color: '#475569', highlight: '#38bdf8' },
-      font: { color: '#94a3b8', size: 9, align: 'middle' },
-      arrows: 'to',
-      smooth: { type: 'continuous' }
-    }));
-
-    const visData = {
-      nodes: new vis.DataSet(formattedNodes),
-      edges: new vis.DataSet(formattedEdges)
-    };
-
-    const miniGraph = formattedNodes.length <= 8;
-    const options = createGraphOptions(miniGraph);
-
-    try {
-      network = new vis.Network(container, visData, options);
-      network.fit({ animation: true, maxZoom: miniGraph ? 1.5 : undefined });
-    } catch (err) {
-      console.error('Erreur Vis Network principal:', err);
-      showRuntimeError('vis-network a échoué pendant le rendu principal.');
-      return;
-    }
-
-    // Node click event
-    network.on("selectNode", (params) => {
-      const nodeId = params.nodes[0];
-      const nodeObj = formattedNodes.find(n => n.id === nodeId);
-      if (nodeObj) {
-        renderSidebarDetails(nodeObj);
-      }
-    });
-
-    network.on("deselectNode", () => {
-      nodeDetails.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Cliquez sur un nœud du réseau pour afficher ses informations détaillées.</div>';
-    });
+    renderGraph(data.graphData);
   }
 
-  function renderSidebarDetails(node) {
-    const raw = node.rawDetails;
-    let html = `
-      <div class="node-detail-name">${node.label}</div>
-      <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Type: ${node.group.toUpperCase()}</div>
-      <div style="font-size: 13px; line-height: 1.4; color: var(--text-main);">
-        <strong>Description:</strong><br>${raw.title || 'N/A'}
-      </div>
-    `;
-    nodeDetails.innerHTML = html;
-  }
-
-  // Buttons handlers
   document.getElementById('btnFit').addEventListener('click', () => {
-    if (network) network.fit({ animation: true });
+    if (cy) cy.fit();
   });
 
   document.getElementById('btnExport').addEventListener('click', () => {
-    const canvas = container.querySelector('canvas');
-    if (canvas) {
+    if (cy) {
+      const png = cy.png({ scale: 2, full: true, bg: '#0b0f19' });
       const link = document.createElement('a');
       link.download = 'osint-graph-export.png';
-      link.href = canvas.toDataURL();
+      link.href = png;
       link.click();
     }
   });
