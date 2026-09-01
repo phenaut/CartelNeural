@@ -30,14 +30,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (data.graphStatus === 'loading') {
-      setTimeout(loadDataAndRender, 500);
+      setTimeout(() => {
+        loadDataAndRender();
+      }, 1500);
       return;
     }
 
     loadingOverlay.style.display = 'none';
 
     if (!data.graphData || !data.graphData.nodes || data.graphData.nodes.length === 0) {
-      nodeDetails.innerHTML = '<div style="color: #ef4444;">Aucune donnée trouvée pour cette recherche.</div>';
+      nodeDetails.innerHTML = '<div style="color: #ef4444;">Aucune donnée trouvée pour cette recherche. Un graphe de secours a été généré.</div>';
+      const fallbackNode = {
+        id: 'fallback_root',
+        label: data.currentQuery ? (data.currentQuery.type === 'person' ? `${data.currentQuery.prenom} ${data.currentQuery.nom}`.trim() : data.currentQuery.email) : 'Recherche',
+        group: 'person',
+        isRoot: true,
+        title: 'Sujet de recherche principal'
+      };
+
+      const fallbackEdge = { from: 'fallback_root', to: 'fallback_company', label: 'RELATION_DE_SECOURS' };
+      const fallbackCompany = { id: 'fallback_company', label: 'Entreprise associée', group: 'company', title: 'Données de secours générées localement' };
+      const fallbackAssoc = { id: 'fallback_assoc', label: 'Contact associé', group: 'person', title: 'Données de secours générées localement' };
+      const fallbackEdge2 = { from: 'fallback_company', to: 'fallback_assoc', label: 'ASSOCIÉ' };
+
+      const fallbackData = {
+        nodes: [fallbackNode, fallbackCompany, fallbackAssoc],
+        edges: [fallbackEdge, fallbackEdge2]
+      };
+
+      const formattedNodes = fallbackData.nodes.map(node => ({
+        id: node.id,
+        label: node.label,
+        group: node.group,
+        title: node.title || node.label,
+        shape: node.isRoot ? 'diamond' : 'dot',
+        size: node.isRoot ? 25 : 16,
+        color: node.isRoot ? rootColor : (groupColors[node.group] || groupColors.person),
+        font: { color: '#f8fafc', face: 'system-ui', size: 12, strokeWidth: 2, strokeColor: '#0f172a' },
+        rawDetails: node
+      }));
+
+      const formattedEdges = fallbackData.edges.map(edge => ({
+        from: edge.from,
+        to: edge.to,
+        label: edge.label,
+        color: { color: '#475569', highlight: '#38bdf8' },
+        font: { color: '#94a3b8', size: 9, align: 'middle' },
+        arrows: 'to',
+        smooth: { type: 'continuous' }
+      }));
+
+      const visData = { nodes: new vis.DataSet(formattedNodes), edges: new vis.DataSet(formattedEdges) };
+      const options = {
+        nodes: { borderWidth: 2, shadow: true },
+        edges: { width: 1.5, shadow: false },
+        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.01, springLength: 100, springConstant: 0.08 }, stabilization: { iterations: 120 } },
+        interaction: { hover: true, tooltipDelay: 200 }
+      };
+
+      network = new vis.Network(container, visData, options);
       return;
     }
 

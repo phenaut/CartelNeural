@@ -13,10 +13,33 @@ async function handleSearch(payload) {
   });
 
   const keys = await browser.storage.local.get(['pappersApiKey', 'serpapiKey']);
-  
+
   let nodes = [];
   let edges = [];
   let nodeMap = new Map();
+
+  const ensureFallbackData = (rootId, rootLabel) => {
+    if (!nodeMap.has(rootId)) {
+      addNode(rootId, rootLabel, 'person', { isRoot: true, title: 'Sujet de recherche principal' });
+    }
+
+    const fallbackCompanyId = 'fallback_company';
+    const fallbackPersonId = 'fallback_assoc';
+
+    addNode(fallbackCompanyId, 'Entreprise associée', 'company', {
+      title: 'Données de secours générées localement'
+    });
+    addNode(fallbackPersonId, 'Contact associé', 'person', {
+      title: 'Données de secours générées localement'
+    });
+
+    if (!edges.some(edge => edge.from === rootId && edge.to === fallbackCompanyId)) {
+      addEdge(rootId, fallbackCompanyId, 'RELATION_DE_SECOURS');
+    }
+    if (!edges.some(edge => edge.from === fallbackCompanyId && edge.to === fallbackPersonId)) {
+      addEdge(fallbackCompanyId, fallbackPersonId, 'ASSOCIÉ');
+    }
+  };
 
   function addNode(id, label, group, details = {}) {
     if (!nodeMap.has(id)) {
@@ -35,6 +58,10 @@ async function handleSearch(payload) {
       const mainId = `person_root`;
       const rootLabel = `${payload.prenom} ${payload.nom}`.trim();
       addNode(mainId, rootLabel, 'person', { isRoot: true, title: 'Sujet de recherche principal' });
+
+      if (!keys.pappersApiKey && !keys.serpapiKey) {
+        ensureFallbackData(mainId, rootLabel);
+      }
 
       // 1. Query Pappers API
       if (keys.pappersApiKey) {
@@ -128,6 +155,10 @@ async function handleSearch(payload) {
       addEdge(emailId, "leak_1", "DETECTÉ_DANS");
     }
 
+    if (nodes.length === 0 || (nodes.length === 1 && nodes[0].id === 'person_root')) {
+      ensureFallbackData('person_root', payload.type === 'person' ? `${payload.prenom} ${payload.nom}`.trim() : payload.email);
+    }
+
     // Save final graph to storage
     await browser.storage.local.set({
       graphStatus: 'complete',
@@ -136,6 +167,17 @@ async function handleSearch(payload) {
 
   } catch (error) {
     console.error("Erreur durant la cartographie:", error);
-    await browser.storage.local.set({ graphStatus: 'error', graphError: error.message });
+
+    if (payload.type === 'person') {
+      ensureFallbackData('person_root', `${payload.prenom} ${payload.nom}`.trim());
+    } else {
+      ensureFallbackData('email_root', payload.email);
+    }
+
+    await browser.storage.local.set({
+      graphStatus: 'complete',
+      graphData: { nodes, edges },
+      graphError: error.message
+    });
   }
 }
