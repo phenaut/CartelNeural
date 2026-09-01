@@ -55,8 +55,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
   }
 
+  function showRuntimeError(message) {
+    loadingOverlay.style.display = 'none';
+    nodeDetails.innerHTML = `<div style="color: #ef4444; font-weight: 600;">Erreur de rendu du graphe</div><div style="color: var(--text-muted); margin-top: 8px;">${message}</div>`;
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#f8fafc;">Le graphe n’a pas pu être affiché.</div>';
+  }
+
   // Fetch graph data from storage
   async function loadDataAndRender() {
+    if (typeof vis === 'undefined') {
+      showRuntimeError('La bibliothèque vis-network n’est pas chargée. Vérifie le fichier local vis-network.js.');
+      return;
+    }
+
     const data = await browser.storage.local.get(['currentQuery', 'graphData', 'graphStatus']);
 
     if (data.currentQuery) {
@@ -121,8 +132,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       const visData = { nodes: new vis.DataSet(formattedNodes), edges: new vis.DataSet(formattedEdges) };
       const options = createGraphOptions(true);
 
-      network = new vis.Network(container, visData, options);
-      network.fit({ animation: true, maxZoom: 1.5 });
+      try {
+        network = new vis.Network(container, visData, options);
+        network.fit({ animation: true, maxZoom: 1.5 });
+      } catch (err) {
+        console.error('Erreur Vis Network fallback:', err);
+        showRuntimeError('Le graphe a été généré mais vis-network n’a pas réussi à l’afficher.');
+        return;
+      }
       return;
     }
 
@@ -161,8 +178,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const miniGraph = formattedNodes.length <= 8;
     const options = createGraphOptions(miniGraph);
 
-    network = new vis.Network(container, visData, options);
-    network.fit({ animation: true, maxZoom: miniGraph ? 1.5 : undefined });
+    try {
+      network = new vis.Network(container, visData, options);
+      network.fit({ animation: true, maxZoom: miniGraph ? 1.5 : undefined });
+    } catch (err) {
+      console.error('Erreur Vis Network principal:', err);
+      showRuntimeError('vis-network a échoué pendant le rendu principal.');
+      return;
+    }
 
     // Node click event
     network.on("selectNode", (params) => {
