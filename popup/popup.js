@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const emailFields = document.getElementById('emailFields');
   const searchForm = document.getElementById('searchForm');
   const btnSaveKeys = document.getElementById('btnSaveKeys');
+  const btnOpenOptions = document.getElementById('btnOpenOptions');
   const statusMsg = document.getElementById('statusMsg');
 
   // Load saved API Keys
@@ -30,6 +31,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await browser.storage.local.set({ pappersApiKey, serpapiKey });
     statusMsg.style.display = 'block';
     setTimeout(() => { statusMsg.style.display = 'none'; }, 2000);
+  });
+
+  btnOpenOptions.addEventListener('click', () => {
+    browser.runtime.openOptionsPage();
   });
 
   // Handle Form Submit
