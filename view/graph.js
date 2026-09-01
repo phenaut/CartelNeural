@@ -1,8 +1,14 @@
 document.addEventListener('DOMContentLoaded', async () => {
+  const browserApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
   const container = document.getElementById('mynetwork');
   const loadingOverlay = document.getElementById('loadingOverlay');
   const queryDisplay = document.getElementById('queryDisplay');
   const nodeDetails = document.getElementById('nodeDetails');
+
+  if (!browserApi || !browserApi.storage || !browserApi.storage.local) {
+    showRuntimeError('L’extension n’est pas accessible dans ce contexte. Ouvre cette vue depuis l’extension Browser/Chrome.');
+    return;
+  }
 
   let network = null;
 
@@ -68,7 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const data = await browser.storage.local.get(['currentQuery', 'graphData', 'graphStatus']);
+    const data = await browserApi.storage.local.get(['currentQuery', 'graphData', 'graphStatus']);
 
     if (data.currentQuery) {
       if (data.currentQuery.type === 'person') {

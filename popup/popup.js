@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', async () => {
+  const browserApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
   const searchType = document.getElementById('searchType');
   const personFields = document.getElementById('personFields');
   const emailFields = document.getElementById('emailFields');
@@ -7,8 +8,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnOpenOptions = document.getElementById('btnOpenOptions');
   const statusMsg = document.getElementById('statusMsg');
 
+  if (!browserApi || !browserApi.storage || !browserApi.storage.local) {
+    statusMsg.textContent = 'L’extension n’a pas accès au stockage navigateur.';
+    statusMsg.style.display = 'block';
+    return;
+  }
+
   // Load saved API Keys
-  const saved = await browser.storage.local.get(['pappersApiKey', 'serpapiKey']);
+  const saved = await browserApi.storage.local.get(['pappersApiKey', 'serpapiKey']);
   if (saved.pappersApiKey) document.getElementById('pappersKey').value = saved.pappersApiKey;
   if (saved.serpapiKey) document.getElementById('serpapiKey').value = saved.serpapiKey;
 
@@ -28,13 +35,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pappersApiKey = document.getElementById('pappersKey').value.trim();
     const serpapiKey = document.getElementById('serpapiKey').value.trim();
 
-    await browser.storage.local.set({ pappersApiKey, serpapiKey });
+    await browserApi.storage.local.set({ pappersApiKey, serpapiKey });
     statusMsg.style.display = 'block';
     setTimeout(() => { statusMsg.style.display = 'none'; }, 2000);
   });
 
   btnOpenOptions.addEventListener('click', () => {
-    browser.runtime.openOptionsPage();
+    if (browserApi && browserApi.runtime && browserApi.runtime.openOptionsPage) {
+      browserApi.runtime.openOptionsPage();
+    }
   });
 
   // Handle Form Submit
@@ -62,10 +71,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Send query to background script
-    browser.runtime.sendMessage({ action: 'startSearch', payload: queryPayload });
+    if (browserApi && browserApi.runtime && browserApi.runtime.sendMessage) {
+      browserApi.runtime.sendMessage({ action: 'startSearch', payload: queryPayload });
+    }
 
     // Open graph page in new tab
-    browser.tabs.create({ url: browser.runtime.getURL('view/graph.html') });
+    if (browserApi && browserApi.tabs && browserApi.tabs.create) {
+      browserApi.tabs.create({ url: browserApi.runtime.getURL('view/graph.html') });
+    }
 
     window.close();
   });

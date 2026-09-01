@@ -1,18 +1,27 @@
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'startSearch') {
-    handleSearch(message.payload);
-  }
-});
+const browserApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
+
+if (browserApi && browserApi.runtime) {
+  browserApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'startSearch') {
+      handleSearch(message.payload);
+    }
+  });
+}
 
 async function handleSearch(payload) {
+  if (!browserApi || !browserApi.storage || !browserApi.storage.local) {
+    console.error('Storage API unavailable in background worker.');
+    return;
+  }
+
   // Clear previous search data and store initial query
-  await browser.storage.local.set({
+  await browserApi.storage.local.set({
     currentQuery: payload,
     graphStatus: 'loading',
     graphData: { nodes: [], edges: [] }
   });
 
-  const keys = await browser.storage.local.get(['pappersApiKey', 'serpapiKey']);
+  const keys = await browserApi.storage.local.get(['pappersApiKey', 'serpapiKey']);
 
   let nodes = [];
   let edges = [];
@@ -160,7 +169,7 @@ async function handleSearch(payload) {
     }
 
     // Save final graph to storage
-    await browser.storage.local.set({
+    await browserApi.storage.local.set({
       graphStatus: 'complete',
       graphData: { nodes, edges }
     });
@@ -174,7 +183,7 @@ async function handleSearch(payload) {
       ensureFallbackData('email_root', payload.email);
     }
 
-    await browser.storage.local.set({
+    await browserApi.storage.local.set({
       graphStatus: 'complete',
       graphData: { nodes, edges },
       graphError: error.message
