@@ -17,6 +17,44 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const rootColor = { background: '#ef4444', border: '#dc2626', highlight: { background: '#fca5a5', border: '#b91c1c' } };
 
+  function createGraphOptions(mini = false) {
+    return {
+      nodes: {
+        borderWidth: 2,
+        shadow: true,
+        font: { color: '#f8fafc', face: 'system-ui', size: 12, strokeWidth: 2, strokeColor: '#0f172a' }
+      },
+      edges: {
+        width: 1.5,
+        shadow: false,
+        smooth: { type: 'dynamic', roundness: 0.2 },
+        arrows: 'to'
+      },
+      layout: {
+        improvedLayout: true,
+        randomSeed: 42,
+        hierarchical: false
+      },
+      physics: mini ? {
+        enabled: false
+      } : {
+        enabled: true,
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: {
+          gravitationalConstant: -50,
+          centralGravity: 0.01,
+          springLength: 100,
+          springConstant: 0.08
+        },
+        stabilization: { iterations: 150 }
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 200
+      }
+    };
+  }
+
   // Fetch graph data from storage
   async function loadDataAndRender() {
     const data = await browser.storage.local.get(['currentQuery', 'graphData', 'graphStatus']);
@@ -81,14 +119,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }));
 
       const visData = { nodes: new vis.DataSet(formattedNodes), edges: new vis.DataSet(formattedEdges) };
-      const options = {
-        nodes: { borderWidth: 2, shadow: true },
-        edges: { width: 1.5, shadow: false },
-        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.01, springLength: 100, springConstant: 0.08 }, stabilization: { iterations: 120 } },
-        interaction: { hover: true, tooltipDelay: 200 }
-      };
+      const options = createGraphOptions(true);
 
       network = new vis.Network(container, visData, options);
+      network.fit({ animation: true, maxZoom: 1.5 });
       return;
     }
 
@@ -124,32 +158,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       edges: new vis.DataSet(formattedEdges)
     };
 
-    const options = {
-      nodes: {
-        borderWidth: 2,
-        shadow: true
-      },
-      edges: {
-        width: 1.5,
-        shadow: false
-      },
-      physics: {
-        solver: 'forceAtlas2Based',
-        forceAtlas2Based: {
-          gravitationalConstant: -50,
-          centralGravity: 0.01,
-          springLength: 100,
-          springConstant: 0.08
-        },
-        stabilization: { iterations: 150 }
-      },
-      interaction: {
-        hover: true,
-        tooltipDelay: 200
-      }
-    };
+    const miniGraph = formattedNodes.length <= 8;
+    const options = createGraphOptions(miniGraph);
 
     network = new vis.Network(container, visData, options);
+    network.fit({ animation: true, maxZoom: miniGraph ? 1.5 : undefined });
 
     // Node click event
     network.on("selectNode", (params) => {
