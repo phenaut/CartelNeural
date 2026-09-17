@@ -18,11 +18,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   let pollTimer = null;
 
   const DEPTH_COLORS = {
-    0: '#ef4444', // N0 Cible principale
-    1: '#38bdf8', // N1 Contacts directs
-    2: '#a78bfa', // N2 Contacts de contacts
-    3: '#f97316', // N3 Niveau 3
-    4: '#eab308', // N4 Niveau étendu
+    0: '#ef4444', // N0 Cible
+    1: '#38bdf8', // N1 Homonymes / Profils
+    2: '#10b981', // N2 Sociétés
+    3: '#f97316', // N3 Associés & Dirigeants
+    4: '#10b981', // N4 Sociétés étendues
+    5: '#a78bfa', // N5 Associés étendus
   };
 
   const groupColors = {
