@@ -47,6 +47,7 @@ let edges = [];
 let nodeMap = new Map();
 let entityMap = {};
 let processedPersonKeys = new Set();
+let processedCompanies = new Set();
 let currentFrontier = [];
 let currentDepth = 0;
 
@@ -68,6 +69,15 @@ function addEdge(from, to, label) {
   }
 }
 
+async function notifyUpdate(status = 'partial') {
+  if (!browserApi?.storage?.local) return;
+  await browserApi.storage.local.set({
+    graphStatus:  status,
+    graphData:    { nodes: [...nodes], edges: [...edges] },
+    currentDepth: currentDepth
+  });
+}
+
 // ── Démarrage de la recherche ────────────────────────────────────────────────
 
 async function handleSearch(payload) {
@@ -78,6 +88,7 @@ async function handleSearch(payload) {
   nodeMap = new Map();
   entityMap = {};
   processedPersonKeys = new Set();
+  processedCompanies = new Set();
   currentFrontier = [];
   currentDepth = 0;
 
@@ -91,7 +102,6 @@ async function handleSearch(payload) {
     serpapiKey = ''
   } = payload;
 
-  // Sauvegarder les clés reçues
   const keysToSave = {};
   if (pappersApiKey) keysToSave.pappersApiKey = pappersApiKey;
   if (serpapiKey)    keysToSave.serpapiKey    = serpapiKey;
@@ -99,7 +109,6 @@ async function handleSearch(payload) {
     await browserApi.storage.local.set(keysToSave);
   }
 
-  // Lecture de toutes les clés enregistrées
   const savedKeys = await browserApi.storage.local.get(['pappersApiKey', 'serpapiKey']);
   const activePappersKey = pappersApiKey || savedKeys.pappersApiKey || '';
   const activeSerpapiKey = serpapiKey    || savedKeys.serpapiKey    || '';
@@ -123,9 +132,10 @@ async function handleSearch(payload) {
     title: 'Sujet de recherche principal (N0)'
   });
 
+  // Affichage immédiat du nœud N0 sur le graphe
   await browserApi.storage.local.set({
     currentQuery: payload,
-    graphStatus:  'loading',
+    graphStatus:  'partial',
     graphData:    { nodes: [...nodes], edges: [...edges] },
     graphError:   null,
     maxDepth:     parseInt(maxDepth, 10) || 3
@@ -139,7 +149,7 @@ async function handleSearch(payload) {
     return;
   }
 
-  // ── Lancement des itérations N0 → N1 → N2 → N3 ────────────────────────────
+  // ── Traversée BFS N0 → N1 → N2 → N3 ───────────────────────────────────────
   let frontier = [{ id: rootId, label: rootLabel, depth: 0 }];
   const targetDepth = parseInt(maxDepth, 10) || 3;
 
@@ -156,15 +166,10 @@ async function handleSearch(payload) {
         activeSerpapiKey
       );
       nextFrontier.push(...discovered);
-      await sleep(250);
-    }
 
-    // Sauvegarde de l'itération terminée
-    await browserApi.storage.local.set({
-      graphStatus:  level < targetDepth ? 'partial' : 'complete',
-      graphData:    { nodes: [...nodes], edges: [...edges] },
-      currentDepth: level
-    });
+      await notifyUpdate('partial');
+      await sleep(150);
+    }
 
     frontier = nextFrontier;
     if (frontier.length === 0) {
@@ -209,7 +214,8 @@ async function handleExpand() {
       activeSerpapiKey
     );
     nextFrontier.push(...discovered);
-    await sleep(250);
+    await notifyUpdate('partial');
+    await sleep(150);
   }
 
   currentFrontier = nextFrontier;
@@ -224,6 +230,7 @@ async function handleExpand() {
 
 async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpapiKey) {
   const newPersonsFound = [];
+  const currentPersonKey = normalizePersonKey('', personLabel);
 
   // ── 1. Scan SerpApi (Facebook & LinkedIn) ──────────────────────────────────
   if (serpapiKey) {
@@ -235,7 +242,8 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
         const serpData = await serpRes.json();
         const results = serpData.organic_results || [];
 
-        results.forEach((res, idx) => {
+        for (let idx = 0; idx < results.length; idx++) {
+          const res = results[idx];
           const isLinkedIn  = (res.link || '').includes('linkedin.com');
           const isFacebook  = (res.link || '').includes('facebook.com');
           const sourceLabel = isLinkedIn ? 'LinkedIn' : (isFacebook ? 'Facebook' : 'Web');
@@ -255,7 +263,8 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
               title: `Profil ${sourceLabel} : ${res.link}\n${res.snippet || ''}`
             });
 
-            if (!processedPersonKeys.has(pKey)) {
+            // Si c'est un profil différent de la personne en cours, on l'ajoute à la frontière
+            if (pKey && pKey !== currentPersonKey && !processedPersonKeys.has(pKey)) {
               processedPersonKeys.add(pKey);
               newPersonsFound.push({
                 id: targetId,
@@ -269,7 +278,7 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
             addEdge(personId, targetId, `PROFIL_${sourceLabel.toUpperCase()}`);
           }
 
-          // Détection d'une société mentionnée dans la bio / snippet
+          // Détection d'une société mentionnée dans le snippet
           const snippetText = `${res.title || ''} ${res.snippet || ''}`;
           const companyMatch = snippetText.match(/(?:chez|at|de la société|au sein de)\s+([A-Z0-9À-ÖØ-ß][A-Za-z0-9À-ÖØ-ß\s&]{2,25})/i);
           if (companyMatch && companyMatch[1]) {
@@ -287,7 +296,9 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
 
             addEdge(targetId, compId, 'POSTE / SOCIÉTÉ');
           }
-        });
+
+          await notifyUpdate('partial');
+        }
       }
     } catch (err) {
       console.error(`[CartelNeural] Erreur SerpApi pour "${personLabel}":`, err);
@@ -306,11 +317,12 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
         const data = await pappersRes.json();
         const resultats = data.resultats || [];
 
-        resultats.forEach((dir, idx) => {
+        for (let idx = 0; idx < resultats.length; idx++) {
+          const dir = resultats[idx];
           const dirPrenom = dir.prenom || '';
           const dirNom    = dir.nom    || '';
           const dirName   = `${dirPrenom} ${dirNom}`.trim();
-          if (!dirName) return;
+          if (!dirName) continue;
 
           const pKey = normalizePersonKey(dirPrenom, dirNom);
           let targetPersonId = entityMap[pKey];
@@ -324,7 +336,8 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
               title: `Qualité: ${dir.qualite || 'Dirigeant'}`
             });
 
-            if (!processedPersonKeys.has(pKey)) {
+            // Si c'est une personne différente, on l'ajoute à la frontière
+            if (pKey && pKey !== currentPersonKey && !processedPersonKeys.has(pKey)) {
               processedPersonKeys.add(pKey);
               newPersonsFound.push({
                 id: targetPersonId,
@@ -338,8 +351,10 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
             addEdge(personId, targetPersonId, dir.qualite || 'CORRESPONDANCE_POSSIBLE');
           }
 
+          // Entreprises du dirigeant
           if (dir.entreprises) {
-            dir.entreprises.forEach((ent, eIdx) => {
+            for (let eIdx = 0; eIdx < dir.entreprises.length; eIdx++) {
+              const ent = dir.entreprises[eIdx];
               const rawSiren = ent.siren || '';
               const siren    = rawSiren.toString().replace(/\s+/g, '');
               const entName  = ent.nom_entreprise || ent.denomination || 'Entreprise';
@@ -352,12 +367,87 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
                 addNode(targetCompanyId, entName, 'company', {
                   title: `SIREN: ${siren || 'N/A'}`
                 });
+                await notifyUpdate('partial');
               }
 
               addEdge(targetPersonId, targetCompanyId, dir.qualite || ent.qualite || 'DIRIGEANT');
-            });
+
+              // ── EXTRACTION DES CO-DIRIGEANTS DE L'ENTREPRISE (REBOND N+1) ──
+              if (siren && !processedCompanies.has(siren) && depth < 3) {
+                processedCompanies.add(siren);
+                await sleep(150);
+
+                try {
+                  const entUrl = `https://api.pappers.fr/v2/entreprise/dirigeants?siren=${siren}&api_token=${pappersKey}`;
+                  let entRes = await fetch(entUrl);
+                  let rawList = [];
+
+                  if (entRes.ok) {
+                    const entData = await entRes.json();
+                    rawList = Array.isArray(entData)
+                      ? entData
+                      : (entData.dirigeants || entData.representants || entData.resultats || []);
+                  } else {
+                    const fbUrl = `https://api.pappers.fr/v2/entreprise?siren=${siren}&api_token=${pappersKey}`;
+                    const fbRes = await fetch(fbUrl);
+                    if (fbRes.ok) {
+                      const fbData = await fbRes.json();
+                      rawList = fbData.representants || fbData.dirigeants || [];
+                      if (Array.isArray(fbData.beneficiaires_effectifs)) {
+                        rawList = rawList.concat(fbData.beneficiaires_effectifs);
+                      }
+                    }
+                  }
+
+                  for (const rep of rawList) {
+                    if (rep.personne_morale === true) continue;
+
+                    const repPrenom  = rep.prenom || rep.prenom_usuel || rep.prenoms || '';
+                    const repNom     = rep.nom || rep.nom_usage || '';
+                    const repComplet = rep.nom_complet || `${repPrenom} ${repNom}`.trim();
+                    if (!repPrenom && !repNom && !repComplet) continue;
+
+                    const repLabel = repComplet || `${repPrenom} ${repNom}`.trim();
+                    const repKey   = normalizePersonKey(repPrenom, repNom || repLabel);
+
+                    if (repKey && repKey !== currentPersonKey) {
+                      let coDirId = entityMap[repKey];
+
+                      if (!coDirId) {
+                        coDirId = `codir_${repKey}_d${depth + 1}`;
+                        entityMap[repKey] = coDirId;
+
+                        addNode(coDirId, repLabel, 'person', {
+                          depth: depth + 1,
+                          title: `${rep.qualite || 'Co-dirigeant'} — ${entName}`
+                        });
+
+                        if (!processedPersonKeys.has(repKey)) {
+                          processedPersonKeys.add(repKey);
+                          newPersonsFound.push({
+                            id: coDirId,
+                            label: repLabel,
+                            depth: depth + 1
+                          });
+                        }
+
+                        await notifyUpdate('partial');
+                        await sleep(50);
+                      }
+
+                      addEdge(targetCompanyId, coDirId, rep.qualite || 'DIRIGEANT');
+                    }
+                  }
+                } catch (entErr) {
+                  console.warn(`[CartelNeural] Erreur co-dirigeants SIREN ${siren}:`, entErr);
+                }
+              }
+            }
           }
-        });
+
+          await notifyUpdate('partial');
+          await sleep(50);
+        }
       }
     } catch (err) {
       console.error(`[CartelNeural] Erreur Pappers pour "${personLabel}":`, err);
