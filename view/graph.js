@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   let cy = null;
+  let fcoseRegistered = false;
 
   const groupColors = {
     person: '#38bdf8',
@@ -36,7 +37,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         group: node.group,
         title: node.title || node.label,
         raw: node,
-        color: node.isRoot ? rootColor : (groupColors[node.group] || groupColors.person)
+        color: node.isRoot ? rootColor : (groupColors[node.group] || groupColors.person),
+        size: node.isRoot ? 45 : 30,
+        shape: node.isRoot ? 'diamond' : 'ellipse'
       }
     }));
 
@@ -57,6 +60,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof cytoscape === 'undefined') {
       showRuntimeError('La bibliothèque Cytoscape.js n’est pas chargée.');
       return;
+    }
+
+    if (!fcoseRegistered) {
+      if (typeof cytoscapeFcose === 'undefined') {
+        showRuntimeError('Le plugin fCoSE n’est pas chargé.');
+        return;
+      }
+      cytoscapeFcose(cytoscape);
+      fcoseRegistered = true;
     }
 
     const elements = buildCytoscapeGraph(graphData);
@@ -81,8 +93,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             'color': '#f8fafc',
             'text-outline-width': 2,
             'text-outline-color': '#0f172a',
-            'width': 'mapData(weight, 0, 30, 20, 45)',
-            'height': 'mapData(weight, 0, 30, 20, 45)',
+            'width': 'data(size)',
+            'height': 'data(size)',
             'shape': 'data(shape)',
             'border-width': 2,
             'border-color': '#0f172a'
@@ -104,15 +116,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       ],
       layout: {
-        name: 'cose',
+        name: 'fcose',
+        quality: 'default',
         animate: true,
         randomize: false,
         fit: true,
         padding: 30,
         nodeRepulsion: 4500,
         idealEdgeLength: 100,
+        edgeElasticity: 0.45,
+        nestingFactor: 0.1,
         gravity: 0.25,
-        nodeOverlap: 10
+        numIter: 250,
+        tile: true,
+        tilingPaddingVertical: 10,
+        tilingPaddingHorizontal: 10
       },
       wheelSensitivity: 0.35
     });
@@ -129,6 +147,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (event.target === cy) {
         nodeDetails.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Cliquez sur un nœud du réseau pour afficher ses informations détaillées.</div>';
       }
+    });
+
+    cy.on('dragfree', 'node', function (event) {
+      const movedNode = event.target;
+      const localGraph = movedNode.closedNeighborhood();
+
+      localGraph.layout({
+        name: 'fcose',
+        quality: 'default',
+        randomize: false,
+        animate: true,
+        fit: false,
+        padding: 20,
+        nodeRepulsion: 3000,
+        idealEdgeLength: 90,
+        edgeElasticity: 0.45,
+        gravity: 0.15,
+        numIter: 80,
+        tile: false
+      }).run();
     });
 
     cy.fit();
