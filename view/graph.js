@@ -23,6 +23,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const rootColor = '#ef4444';
 
+  function createLayoutOptions({ fit = true, randomize = false, numIter = 250 } = {}) {
+    return {
+      name: 'fcose',
+      quality: 'default',
+      animate: true,
+      randomize,
+      fit,
+      padding: 30,
+      nodeRepulsion: 4500,
+      idealEdgeLength: 100,
+      edgeElasticity: 0.45,
+      nestingFactor: 0.1,
+      gravity: 0.25,
+      numIter,
+      tile: true,
+      tilingPaddingVertical: 10,
+      tilingPaddingHorizontal: 10
+    };
+  }
+
   function showRuntimeError(message) {
     loadingOverlay.style.display = 'none';
     nodeDetails.innerHTML = `<div style="color: #ef4444; font-weight: 600;">Erreur de rendu du graphe</div><div style="color: var(--text-muted); margin-top: 8px;">${message}</div>`;
@@ -113,25 +133,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             'color': '#cbd5e1',
             'text-rotation': 'autorotate'
           }
+        },
+        {
+          selector: 'edge.edge-labels-hidden',
+          style: {
+            'label': ''
+          }
+        },
+        {
+          selector: 'edge:selected',
+          style: {
+            'line-color': '#38bdf8',
+            'target-arrow-color': '#38bdf8',
+            'width': 3
+          }
         }
       ],
-      layout: {
-        name: 'fcose',
-        quality: 'default',
-        animate: true,
-        randomize: false,
-        fit: true,
-        padding: 30,
-        nodeRepulsion: 4500,
-        idealEdgeLength: 100,
-        edgeElasticity: 0.45,
-        nestingFactor: 0.1,
-        gravity: 0.25,
-        numIter: 250,
-        tile: true,
-        tilingPaddingVertical: 10,
-        tilingPaddingHorizontal: 10
-      },
+      layout: createLayoutOptions(),
       wheelSensitivity: 0.35
     });
 
@@ -143,9 +161,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
+    cy.on('tap', 'edge', function (event) {
+      const edge = event.target;
+      cy.elements().unselect();
+      edge.select();
+      renderEdgeSidebarDetails(edge);
+    });
+
     cy.on('tap', function (event) {
       if (event.target === cy) {
-        nodeDetails.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Cliquez sur un nœud du réseau pour afficher ses informations détaillées.</div>';
+        nodeDetails.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Cliquez sur un nœud ou un lien du réseau pour afficher ses informations détaillées.</div>';
       }
     });
 
@@ -154,17 +179,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const localGraph = movedNode.closedNeighborhood();
 
       localGraph.layout({
-        name: 'fcose',
-        quality: 'default',
-        randomize: false,
-        animate: true,
-        fit: false,
+        ...createLayoutOptions({ fit: false, numIter: 80 }),
         padding: 20,
         nodeRepulsion: 3000,
         idealEdgeLength: 90,
-        edgeElasticity: 0.45,
         gravity: 0.15,
-        numIter: 80,
         tile: false
       }).run();
     });
@@ -181,6 +200,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
     `;
     nodeDetails.innerHTML = html;
+  }
+
+  function renderEdgeSidebarDetails(edge) {
+    nodeDetails.innerHTML = `
+      <div class="node-detail-name">${edge.data('label') || 'Relation sans nom'}</div>
+      <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Lien sélectionné</div>
+      <div style="font-size: 13px; line-height: 1.4; color: var(--text-main);">
+        <strong>De :</strong> ${edge.source().data('label')}<br>
+        <strong>Vers :</strong> ${edge.target().data('label')}
+      </div>
+    `;
+  }
+
+  function reorganizeGraph() {
+    if (cy) cy.layout(createLayoutOptions({ fit: true, randomize: true, numIter: 300 })).run();
   }
 
   async function loadDataAndRender() {
@@ -222,8 +256,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderGraph(data.graphData);
   }
 
+  document.getElementById('btnReorganize').addEventListener('click', reorganizeGraph);
+
   document.getElementById('btnFit').addEventListener('click', () => {
     if (cy) cy.fit();
+  });
+
+  document.getElementById('btnToggleLabels').addEventListener('click', (event) => {
+    if (!cy) return;
+    const button = event.currentTarget;
+    const labelsVisible = button.getAttribute('aria-pressed') === 'true';
+    cy.edges().toggleClass('edge-labels-hidden', labelsVisible);
+    button.setAttribute('aria-pressed', String(!labelsVisible));
+    button.textContent = `Liens : ${labelsVisible ? 'masqués' : 'visibles'}`;
+  });
+
+  function zoomAroundCenter(factor) {
+    if (!cy) return;
+    cy.zoom({
+      level: cy.zoom() * factor,
+      renderedPosition: { x: container.clientWidth / 2, y: container.clientHeight / 2 }
+    });
+  }
+
+  document.getElementById('btnZoomOut').addEventListener('click', () => zoomAroundCenter(0.85));
+  document.getElementById('btnZoomIn').addEventListener('click', () => zoomAroundCenter(1.15));
+
+  document.getElementById('btnResetView').addEventListener('click', () => {
+    if (cy) cy.fit({ eles: cy.elements(), padding: 30 });
   });
 
   document.getElementById('btnExport').addEventListener('click', () => {

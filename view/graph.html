@@ -65,6 +65,8 @@
     .controls {
       display: flex;
       gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .btn {
@@ -82,6 +84,10 @@
     .btn:hover {
       border-color: var(--accent);
       color: var(--accent);
+    }
+
+    .btn[aria-pressed="false"] {
+      color: var(--text-muted);
     }
 
     .main-container {
@@ -180,7 +186,12 @@
     </div>
     <div id="queryDisplay" class="query-info">Cible : Chargement...</div>
     <div class="controls">
+      <button class="btn" id="btnReorganize" title="Réorganiser tout le graphe">Réorganiser</button>
       <button class="btn" id="btnFit">Recentrer</button>
+      <button class="btn" id="btnToggleLabels" aria-pressed="true" title="Afficher ou masquer les noms des liens">Liens : visibles</button>
+      <button class="btn" id="btnZoomOut" title="Réduire le zoom">-</button>
+      <button class="btn" id="btnZoomIn" title="Augmenter le zoom">+</button>
+      <button class="btn" id="btnResetView" title="Réinitialiser la vue">Vue initiale</button>
       <button class="btn" id="btnExport">Exporter PNG</button>
     </div>
   </header>
@@ -192,7 +203,7 @@
       <div class="panel-card">
         <div class="panel-title">Détails de la Sélection</div>
         <div id="nodeDetails">
-          <div style="color: var(--text-muted); font-size: 13px;">Cliquez sur un nœud du réseau pour afficher ses informations détaillées.</div>
+          <div style="color: var(--text-muted); font-size: 13px;">Cliquez sur un nœud ou un lien du réseau pour afficher ses informations détaillées.</div>
         </div>
       </div>
       

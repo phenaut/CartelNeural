@@ -104,6 +104,16 @@
       margin-bottom: 8px;
     }
 
+    .api-link {
+      color: var(--accent-color);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .api-link:hover {
+      color: var(--accent-hover);
+    }
+
     .status {
       margin-top: 8px;
       font-size: 12px;
@@ -154,11 +164,11 @@
   <div class="keys-section">
     <div class="keys-title">Clés API (optionnelles)</div>
     <div class="form-group">
-      <label for="pappersKey">Pappers API Key</label>
+      <label for="pappersKey"><a class="api-link" href="https://moncompte.pappers.fr/inscription" target="_blank" rel="noreferrer">Pappers API</a> Key</label>
       <input type="password" id="pappersKey" placeholder="Clé API Pappers">
     </div>
     <div class="form-group">
-      <label for="serpapiKey">SerpApi Key</label>
+      <label for="serpapiKey"><a class="api-link" href="https://serpapi.com/manage-api-key" target="_blank" rel="noreferrer">SerpApi</a> Key</label>
       <input type="password" id="serpapiKey" placeholder="Clé API SerpApi">
     </div>
     <button type="button" id="btnSaveKeys" style="background-color: transparent; border: 1px solid var(--border-color); color: var(--text-main);">Enregistrer les Clés</button>
