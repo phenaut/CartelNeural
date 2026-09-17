@@ -73,6 +73,18 @@
       flex: 1;
     }
 
+    /* Ligne avec deux selects côte à côte */
+    .row-selects {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .row-selects .form-group {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
     button {
       width: 100%;
       padding: 10px;
@@ -89,6 +101,24 @@
 
     button:hover {
       background-color: var(--accent-hover);
+    }
+
+    .depth-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 3px 8px;
+      margin-bottom: 12px;
+    }
+
+    .depth-badge span {
+      color: var(--accent-color);
+      font-weight: 600;
     }
 
     .keys-section {
@@ -126,16 +156,26 @@
 <body>
   <h2>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-    OSINT Graph
+    CartelNeural
   </h2>
 
   <form id="searchForm">
-    <div class="form-group">
-      <label for="searchType">Type de recherche</label>
-      <select id="searchType">
-        <option value="person">Nom / Prénom</option>
-        <option value="email">Adresse Email</option>
-      </select>
+    <div class="row-selects">
+      <div class="form-group">
+        <label for="searchType">Type</label>
+        <select id="searchType">
+          <option value="person">Nom / Prénom</option>
+          <option value="email">Email</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="maxDepth">Profondeur</label>
+        <select id="maxDepth">
+          <option value="1">N1</option>
+          <option value="2">N2</option>
+          <option value="3" selected>N3</option>
+        </select>
+      </div>
     </div>
 
     <div id="personFields">
@@ -162,13 +202,13 @@
   </form>
 
   <div class="keys-section">
-    <div class="keys-title">Clés API (optionnelles)</div>
+    <div class="keys-title">Clés API</div>
     <div class="form-group">
       <label for="pappersKey"><a class="api-link" href="https://moncompte.pappers.fr/inscription" target="_blank" rel="noreferrer">Pappers API</a> Key</label>
       <input type="password" id="pappersKey" placeholder="Clé API Pappers">
     </div>
     <div class="form-group">
-      <label for="serpapiKey"><a class="api-link" href="https://serpapi.com/manage-api-key" target="_blank" rel="noreferrer">SerpApi</a> Key</label>
+      <label for="serpapiKey"><a class="api-link" href="https://serpapi.com/manage-api-key" target="_blank" rel="noreferrer">SerpApi</a> Key (optionnel)</label>
       <input type="password" id="serpapiKey" placeholder="Clé API SerpApi">
     </div>
     <button type="button" id="btnSaveKeys" style="background-color: transparent; border: 1px solid var(--border-color); color: var(--text-main);">Enregistrer les Clés</button>

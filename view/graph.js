@@ -4,6 +4,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const loadingOverlay = document.getElementById('loadingOverlay');
   const queryDisplay = document.getElementById('queryDisplay');
   const nodeDetails = document.getElementById('nodeDetails');
+  const statsDisplay = document.getElementById('statsDisplay');
+  const btnExpand = document.getElementById('btnExpand');
+  const errorBanner = document.getElementById('errorBanner');
 
   if (!browserApi || !browserApi.storage || !browserApi.storage.local) {
     showRuntimeError('L’extension n’est pas accessible dans ce contexte. Ouvre cette vue depuis l’extension Firefox/Chrome.');
@@ -12,13 +15,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let cy = null;
   let fcoseRegistered = false;
+  let lastNodeCount = -1;
+  let lastEdgeCount = -1;
+
+  const DEPTH_COLORS = {
+    0: '#ef4444', // N0 Cible principale
+    1: '#38bdf8', // N1 Contacts directs
+    2: '#a78bfa', // N2 Contacts de contacts
+    3: '#f97316', // N3
+    4: '#eab308', // N4
+  };
 
   const groupColors = {
     person: '#38bdf8',
-    company: '#10b981',
-    social: '#f59e0b',
-    email: '#8b5cf6',
-    source: '#ec4899'
+    company: '#10b981'
   };
 
   const rootColor = '#ef4444';
@@ -30,23 +40,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       animate: true,
       randomize,
       fit,
-      padding: 30,
-      nodeRepulsion: 4500,
-      idealEdgeLength: 100,
+      padding: 40,
+      nodeRepulsion: 5000,
+      idealEdgeLength: 110,
       edgeElasticity: 0.45,
       nestingFactor: 0.1,
       gravity: 0.25,
       numIter,
       tile: true,
-      tilingPaddingVertical: 10,
-      tilingPaddingHorizontal: 10
+      tilingPaddingVertical: 15,
+      tilingPaddingHorizontal: 15
     };
   }
 
   function showRuntimeError(message) {
-    loadingOverlay.style.display = 'none';
-    nodeDetails.innerHTML = `<div style="color: #ef4444; font-weight: 600;">Erreur de rendu du graphe</div><div style="color: var(--text-muted); margin-top: 8px;">${message}</div>`;
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#f8fafc;">Le graphe n’a pas pu être affiché.</div>';
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
+    if (errorBanner) {
+      errorBanner.style.display = 'block';
+      errorBanner.textContent = '⚠ ' + message;
+    }
+  }
+
+  function getNodeColor(node) {
+    if (node.isRoot) return rootColor;
+    if (node.group === 'company') return groupColors.company;
+    const d = node.depth ?? 1;
+    return DEPTH_COLORS[d] || '#94a3b8';
   }
 
   function buildCytoscapeGraph(graphData) {
@@ -55,11 +74,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         id: String(node.id),
         label: node.label,
         group: node.group,
+        depth: node.depth ?? 0,
         title: node.title || node.label,
         raw: node,
-        color: node.isRoot ? rootColor : (groupColors[node.group] || groupColors.person),
-        size: node.isRoot ? 45 : 30,
-        shape: node.isRoot ? 'diamond' : 'ellipse'
+        color: getNodeColor(node),
+        size: node.isRoot ? 46 : (node.group === 'company' ? 26 : 32),
+        shape: node.isRoot ? 'diamond' : (node.group === 'company' ? 'round-rectangle' : 'ellipse')
       }
     }));
 
@@ -108,7 +128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'label': 'data(label)',
             'text-valign': 'center',
             'text-halign': 'center',
-            'font-size': '12px',
+            'font-size': '11px',
             'font-weight': '600',
             'color': '#f8fafc',
             'text-outline-width': 2,
@@ -118,6 +138,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             'shape': 'data(shape)',
             'border-width': 2,
             'border-color': '#0f172a'
+          }
+        },
+        {
+          selector: 'node[group="company"]',
+          style: {
+            'font-size': '10px',
+            'text-wrap': 'wrap',
+            'text-max-width': '75px'
           }
         },
         {
@@ -189,14 +217,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     cy.fit();
+
+    // Mise à jour des compteurs dans le header
+    if (statsDisplay && graphData.nodes) {
+      const pCount = graphData.nodes.filter(n => n.group === 'person').length;
+      const cCount = graphData.nodes.filter(n => n.group === 'company').length;
+      const eCount = (graphData.edges || []).length;
+      statsDisplay.textContent = `${pCount} personne${pCount > 1 ? 's' : ''} · ${cCount} société${cCount > 1 ? 's' : ''} · ${eCount} lien${eCount > 1 ? 's' : ''}`;
+    }
   }
 
   function renderSidebarDetails(raw) {
+    const depthStr = raw.depth !== undefined ? ` · N${raw.depth}` : '';
     let html = `
       <div class="node-detail-name">${raw.label}</div>
-      <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Type: ${(raw.group || 'unknown').toUpperCase()}</div>
+      <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Type : ${(raw.group || 'unknown').toUpperCase()}${depthStr}</div>
       <div style="font-size: 13px; line-height: 1.4; color: var(--text-main);">
-        <strong>Description:</strong><br>${raw.title || 'N/A'}
+        <strong>Description :</strong><br>${raw.title || 'N/A'}
       </div>
     `;
     nodeDetails.innerHTML = html;
@@ -204,7 +241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function renderEdgeSidebarDetails(edge) {
     nodeDetails.innerHTML = `
-      <div class="node-detail-name">${edge.data('label') || 'Relation sans nom'}</div>
+      <div class="node-detail-name">${edge.data('label') || 'Relation'}</div>
       <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Lien sélectionné</div>
       <div style="font-size: 13px; line-height: 1.4; color: var(--text-main);">
         <strong>De :</strong> ${edge.source().data('label')}<br>
@@ -217,44 +254,67 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (cy) cy.layout(createLayoutOptions({ fit: true, randomize: true, numIter: 300 })).run();
   }
 
+  // ── Boucle de chargement et d'affichage continu ─────────────────────────────
+
   async function loadDataAndRender() {
-    const data = await browserApi.storage.local.get(['currentQuery', 'graphData', 'graphStatus']);
+    const data = await browserApi.storage.local.get([
+      'currentQuery',
+      'graphData',
+      'graphStatus',
+      'graphError',
+      'maxDepth'
+    ]);
 
     if (data.currentQuery) {
       if (data.currentQuery.type === 'person') {
-        queryDisplay.textContent = `Cible : ${data.currentQuery.prenom} ${data.currentQuery.nom}`;
+        queryDisplay.textContent = `Cible : ${data.currentQuery.prenom} ${data.currentQuery.nom}`.trim();
       } else {
         queryDisplay.textContent = `Cible : ${data.currentQuery.email}`;
       }
     }
 
-    if (data.graphStatus === 'loading') {
-      setTimeout(() => {
-        loadDataAndRender();
-      }, 1500);
+    if (data.graphError) {
+      showRuntimeError(data.graphError);
+    }
+
+    const currentNodes = data.graphData?.nodes || [];
+    const currentEdges = data.graphData?.edges || [];
+
+    // Si des données sont disponibles et que le nombre a changé, on affiche le graphe
+    if (currentNodes.length > 0 && (currentNodes.length !== lastNodeCount || currentEdges.length !== lastEdgeCount)) {
+      lastNodeCount = currentNodes.length;
+      lastEdgeCount = currentEdges.length;
+      renderGraph(data.graphData);
+    }
+
+    if (data.graphStatus === 'loading' || data.graphStatus === 'partial') {
+      if (loadingOverlay) {
+        if (currentNodes.length > 1) {
+          loadingOverlay.classList.add('floating');
+        } else {
+          loadingOverlay.classList.remove('floating');
+        }
+      }
+      setTimeout(loadDataAndRender, 1200);
       return;
     }
 
-    loadingOverlay.style.display = 'none';
+    // Recherche terminée
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
 
-    if (!data.graphData || !data.graphData.nodes || data.graphData.nodes.length === 0) {
-      const fallbackData = {
-        nodes: [
-          { id: 'fallback_root', label: data.currentQuery ? (data.currentQuery.type === 'person' ? `${data.currentQuery.prenom} ${data.currentQuery.nom}`.trim() : data.currentQuery.email) : 'Recherche', group: 'person', isRoot: true, title: 'Sujet de recherche principal' },
-          { id: 'fallback_company', label: 'Entreprise associée', group: 'company', title: 'Données de secours générées localement' },
-          { id: 'fallback_assoc', label: 'Contact associé', group: 'person', title: 'Données de secours générées localement' }
-        ],
-        edges: [
-          { from: 'fallback_root', to: 'fallback_company', label: 'RELATION_DE_SECOURS' },
-          { from: 'fallback_company', to: 'fallback_assoc', label: 'ASSOCIÉ' }
-        ]
-      };
-      renderGraph(fallbackData);
-      return;
+    if (btnExpand) {
+      const maxD = data.maxDepth || 3;
+      btnExpand.textContent = `▶ Approfondir (N${maxD} → N${maxD + 1})`;
+      btnExpand.style.display = 'block';
+      btnExpand.disabled = false;
     }
 
-    renderGraph(data.graphData);
+    if (currentNodes.length === 0) {
+      showRuntimeError('Aucun résultat trouvé sur Pappers pour cette recherche.');
+    }
   }
+
+  // ── Événements boutons ────────────────────────────────────────────────────
 
   document.getElementById('btnReorganize').addEventListener('click', reorganizeGraph);
 
@@ -282,19 +342,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btnZoomOut').addEventListener('click', () => zoomAroundCenter(0.85));
   document.getElementById('btnZoomIn').addEventListener('click', () => zoomAroundCenter(1.15));
 
-  document.getElementById('btnResetView').addEventListener('click', () => {
-    if (cy) cy.fit({ eles: cy.elements(), padding: 30 });
-  });
-
   document.getElementById('btnExport').addEventListener('click', () => {
     if (cy) {
       const png = cy.png({ scale: 2, full: true, bg: '#0b0f19' });
       const link = document.createElement('a');
-      link.download = 'osint-graph-export.png';
+      link.download = `osint-graph-${Date.now()}.png`;
       link.href = png;
       link.click();
     }
   });
+
+  if (btnExpand) {
+    btnExpand.addEventListener('click', () => {
+      btnExpand.disabled = true;
+      btnExpand.textContent = 'Approfondissement en cours...';
+      if (loadingOverlay) {
+        loadingOverlay.style.display = 'flex';
+        loadingOverlay.classList.add('floating');
+      }
+      browserApi.runtime.sendMessage({ action: 'expandDepth' });
+      setTimeout(loadDataAndRender, 1000);
+    });
+  }
 
   loadDataAndRender();
 });
