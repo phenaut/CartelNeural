@@ -226,16 +226,75 @@ async function handleExpand() {
   });
 }
 
+/** Vérifie si l'URL est un vrai profil personnel et non une page média, vidéo, groupe ou post */
+function isGenuineProfileUrl(link = '') {
+  if (!link) return false;
+  const l = link.toLowerCase();
+
+  const bannedKeywords = [
+    '/watch', '/videos', '/video', '/posts', '/post', '/photos', '/photo',
+    '/groups', '/group', '/events', '/event', '/permalink', '/story',
+    '/stories', '/reels', '/reel', '/share', '/gaming', '/news', '/live',
+    '/hashtag', '/marketplace'
+  ];
+
+  if (bannedKeywords.some(kw => l.includes(kw))) {
+    return false;
+  }
+
+  // Sur LinkedIn, s'assurer qu'il s'agit bien d'un profil individuel (/in/)
+  if (l.includes('linkedin.com') && !l.includes('/in/')) {
+    return false;
+  }
+
+  return true;
+}
+
+/** Nettoie et valide qu'un titre correspond à un nom de personne physique */
+function parseAndValidatePersonName(title = '') {
+  if (!title) return null;
+
+  // Retirer les suffixes de plateforme ("| Facebook", "- LinkedIn", etc.)
+  let clean = title
+    .replace(/\s*\|\s*(Facebook|LinkedIn|Meta).*$/i, '')
+    .replace(/\s*-\s*(Facebook|LinkedIn|Meta).*$/i, '')
+    .trim();
+
+  // Prendre la partie avant les tirets de fonction (ex: "Jean Dupont - Directeur Général")
+  const parts = clean.split(/\s*[-–—|]\s*/);
+  const candidate = parts[0].trim();
+
+  // Mots parasites d'actualités, vidéos ou médias
+  const noiseRegex = /\b(watch|vidéo|video|direct|live|actualité|actualités|news|replay|épisode|journal|publication|regardez|reportage|media|info|infos|cours|formation|recrutement)\b/i;
+  if (noiseRegex.test(candidate)) {
+    return null;
+  }
+
+  // Un nom réel compte entre 2 et 4 mots
+  const words = candidate.split(/\s+/);
+  if (words.length < 2 || words.length > 5) {
+    return null;
+  }
+
+  if (candidate.length < 4 || candidate.length > 45) {
+    return null;
+  }
+
+  return candidate;
+}
+
 // ── Moteur d'exploration OSINT (Pappers + SerpApi Facebook/LinkedIn) ─────────
 
 async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpapiKey) {
   const newPersonsFound = [];
   const currentPersonKey = normalizePersonKey('', personLabel);
 
-  // ── 1. Scan SerpApi (Facebook & LinkedIn) ──────────────────────────────────
+  // ── 1. Scan SerpApi (Facebook & LinkedIn) avec exclusions de pages médias ────
   if (serpapiKey) {
     try {
-      const dork = encodeURIComponent(`"${personLabel}" site:linkedin.com/in OR site:facebook.com`);
+      const dork = encodeURIComponent(
+        `"${personLabel}" (site:linkedin.com/in OR (site:facebook.com -inurl:watch -inurl:posts -inurl:videos -inurl:groups -inurl:events -inurl:photo -inurl:story -inurl:reel))`
+      );
       const serpRes = await fetch(`https://serpapi.com/search.json?q=${dork}&api_key=${serpapiKey}`);
 
       if (serpRes.ok) {
@@ -244,12 +303,22 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
 
         for (let idx = 0; idx < results.length; idx++) {
           const res = results[idx];
-          const isLinkedIn  = (res.link || '').includes('linkedin.com');
-          const isFacebook  = (res.link || '').includes('facebook.com');
-          const sourceLabel = isLinkedIn ? 'LinkedIn' : (isFacebook ? 'Facebook' : 'Web');
+          const rawLink = res.link || '';
 
-          let profileName = (res.title || '').split(/[-|–]/)[0].trim();
-          if (!profileName) profileName = res.title || 'Profil';
+          // 1. Filtrage d'URL : éliminer toute vidéo, publication isolée, groupe, etc.
+          if (!isGenuineProfileUrl(rawLink)) {
+            continue;
+          }
+
+          // 2. Validation du nom : s'assurer qu'il s'agit d'un vrai nom de personne
+          const profileName = parseAndValidatePersonName(res.title);
+          if (!profileName) {
+            continue;
+          }
+
+          const isLinkedIn  = rawLink.includes('linkedin.com');
+          const isFacebook  = rawLink.includes('facebook.com');
+          const sourceLabel = isLinkedIn ? 'LinkedIn' : (isFacebook ? 'Facebook' : 'Web');
 
           const pKey = normalizePersonKey('', profileName);
           let targetId = entityMap[pKey];
@@ -260,7 +329,7 @@ async function searchPersonOSINT(personId, personLabel, depth, pappersKey, serpa
 
             addNode(targetId, profileName, 'person', {
               depth: depth + 1,
-              title: `Profil ${sourceLabel} : ${res.link}\n${res.snippet || ''}`
+              title: `Profil ${sourceLabel} : ${rawLink}\n${res.snippet || ''}`
             });
 
             // Si c'est un profil différent de la personne en cours, on l'ajoute à la frontière
